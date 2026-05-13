@@ -5,140 +5,169 @@ Histórico de Alterações:
   2026-05-13 | AFSIS Dev      | #001   | Implementação v1.1.0
 -->
 
-
 # Swap — Conversor de Arquivos
 
-Aplicação desktop para converter arquivos entre múltiplos formatos de imagem, documento e planilha. Interface moderna com drag & drop, conversão em lote e progresso em tempo real.
+Aplicação web para converter arquivos entre 50+ formatos. Interface moderna com drag & drop, conversão em lote, progresso via WebSocket e upload por URL.
 
 ## Funcionalidades
 
-- **Drag & drop** de arquivos e pastas
-- **Conversão em lote** com múltiplos arquivos simultâneos
-- **Configurações por formato** (qualidade JPEG, DPI, redimensionamento)
-- **Barra de progresso** global e individual por arquivo
-- **Histórico** das últimas 100 conversões
+- **Drag & drop** de arquivos pelo navegador
+- **Conversão em lote** com ThreadPoolExecutor
+- **Upload via URL** — converter arquivo diretamente de um link
+- **Barra de progresso** em tempo real via WebSocket
+- **Histórico** das últimas 100 conversões (JSON)
 - **Tema claro/escuro** com persistência
-- **Log de erros** com detalhes por arquivo
+- **Acessibilidade** — ARIA labels, navegação por teclado
 
 ## Formatos Suportados
 
 | Categoria | Entrada | Saída |
 |---|---|---|
 | Imagem raster | JPG, PNG, BMP, GIF, TIFF, WEBP, ICO, PPM | JPG, PNG, WEBP, BMP, TIFF, ICO, PDF |
-| Imagem vetorial | SVG | PNG, PDF |
+| Imagem vetorial | SVG | PNG, PDF, JPG, WEBP |
 | Documento | DOCX, ODT, TXT, RTF, HTML | PDF, DOCX, TXT, HTML |
-| PDF | PDF | PNG (por página), DOCX, TXT |
+| PDF | PDF | PNG (páginas), DOCX, TXT |
 | Planilha | XLSX, CSV, ODS | XLSX, CSV, PDF |
+| Ebook | EPUB, MOBI, AZW3, FB2, LRF, RB, TCR, SNB, PDB | EPUB, PDF, TXT, MOBI |
+| Apresentação | PPT, PPTX, ODP, PPS, PPSX, PPTM, POT, POTX, POTM, PPSM | PDF, PPTX, ODP, PNG |
+| Quadrinhos | CBZ, CBR, CB7, ZIP, RAR, 7Z | PDF, CBZ |
+
+## Stack
+
+| Camada | Tecnologia |
+|--------|-----------|
+| Backend | Python 3.11 + FastAPI + Uvicorn |
+| Frontend | Vanilla JS (ES6+) + CSS3 + HTML5 |
+| Comunicação | REST API + WebSocket |
+| Conversão | Pillow, PyMuPDF, cairosvg, openpyxl, pandas, python-docx, Calibre, LibreOffice |
+| Deploy | Docker + nginx |
 
 ## Instalação
 
 ### Dependências do sistema
 
-Para conversão de documentos (ODT, RTF → PDF/DOCX), instale o LibreOffice:
-
 ```bash
-# Ubuntu/Debian
-sudo apt install libreoffice
+# LibreOffice (documentos, apresentações, planilhas → PDF)
+sudo apt install libreoffice       # Ubuntu/Debian
+sudo dnf install libreoffice       # Fedora
+brew install libreoffice           # macOS
 
-# Fedora
-sudo dnf install libreoffice
+# Calibre (eBooks)
+sudo apt install calibre           # Ubuntu/Debian
+brew install calibre               # macOS
 
-# macOS
-brew install libreoffice
-
-# Windows
-# Baixe em https://www.libreoffice.org/download/
+# Ferramentas de arquivo (quadrinhos)
+sudo apt install unrar p7zip-full  # Ubuntu/Debian
 ```
 
 ### Python
 
 ```bash
-# Clone o repositório
-git clone <repo-url>
+git clone https://github.com/afsis-dev/Swap.git
 cd Swap
 
-# Crie ambiente virtual
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# ou
-.venv\Scripts\activate     # Windows
+python3 -m venv .venv
+source .venv/bin/activate
 
-# Instale dependências
 pip install -r requirements.txt
 ```
 
 ## Uso
 
 ```bash
-# Execute com Flet
-flet run src/main.py
+# Iniciar servidor
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 
-# Ou diretamente com Python
-python src/main.py
+# Acessar no navegador
+open http://localhost:8000/app
+
+# Documentação da API
+open http://localhost:8000/docs
 ```
 
-## Build
+## Docker
 
 ```bash
-# Linux (AppImage)
-flet build linux
-
-# Windows (.exe)
-flet build windows
-
-# macOS (.app)
-flet build macos
+docker build -t swap .
+docker run -p 8000:8000 swap
 ```
 
-## Testes
+## API Endpoints
 
-```bash
-# Executar todos os testes
-pytest tests/ -v
-
-# Com cobertura
-pytest --cov=src --cov-report=term-missing
-
-# Cobertura mínima 80%
-pytest --cov=src --cov-report=term-missing --cov-fail-under=80
-```
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `POST` | `/api/convert` | Upload + conversão em lote |
+| `POST` | `/api/convert/url` | Conversão a partir de URL |
+| `GET` | `/api/convert/{job_id}` | Status do job |
+| `GET` | `/api/download/{job_id}/{filename}` | Download do arquivo |
+| `GET` | `/api/history` | Histórico de conversões |
+| `GET` | `/api/formats` | Formatos disponíveis |
+| `GET` | `/api/settings` | Configurações |
+| `WS` | `/ws/progress/{job_id}` | Progresso em tempo real |
 
 ## Estrutura do Projeto
 
 ```
 Swap/
 ├── src/
-│   ├── main.py                    # Entry point Flet
-│   ├── app.py                     # App root, roteamento
-│   ├── ui/
-│   │   ├── pages/                 # Home, History, Settings
-│   │   ├── components/            # FileList, FormatPicker, ProgressView
-│   │   └── theme.py               # Tokens claro/escuro
+│   ├── api/
+│   │   ├── main.py                 # FastAPI app, CORS, lifespan
+│   │   ├── models.py               # Pydantic models
+│   │   ├── websocket.py            # WebSocket manager
+│   │   └── routes/
+│   │       ├── convert.py          # Conversão + URL upload
+│   │       ├── history.py          # Histórico CRUD
+│   │       ├── settings.py         # Configurações
+│   │       └── formats.py          # Descoberta de formatos
 │   ├── converters/
-│   │   ├── base.py                # BaseConverter ABC
-│   │   ├── image.py               # Pillow + cairosvg
-│   │   ├── pdf.py                 # PyMuPDF + pdf2docx
-│   │   ├── document.py            # python-docx + LibreOffice
-│   │   └── spreadsheet.py         # openpyxl + pandas
+│   │   ├── base.py                 # BaseConverter ABC
+│   │   ├── image.py                # Pillow + cairosvg
+│   │   ├── pdf.py                  # PyMuPDF + pdf2docx
+│   │   ├── document.py             # python-docx + LibreOffice
+│   │   ├── spreadsheet.py          # openpyxl + pandas
+│   │   ├── ebook.py                # Calibre
+│   │   ├── presentation.py         # LibreOffice Impress
+│   │   ├── vector.py               # cairosvg + Pillow
+│   │   └── comic.py                # Pillow + zipfile
 │   ├── services/
-│   │   ├── conversion_service.py  # ThreadPoolExecutor, batch
-│   │   ├── history_service.py     # JSON persistence
-│   │   └── format_registry.py     # ext → converter map
+│   │   ├── conversion_service.py   # ThreadPoolExecutor, batch
+│   │   ├── history_service.py      # JSON persistence
+│   │   └── format_registry.py      # ext → converter map
 │   └── utils/
-│       ├── config.py              # JSON config
-│       ├── file_utils.py          # pathlib helpers
-│       └── logger.py              # logging
+│       ├── config.py               # JSON config
+│       ├── file_utils.py           # pathlib helpers
+│       └── logger.py               # Structured logging
+├── frontend/
+│   ├── index.html                  # SPA entry point
+│   ├── css/
+│   │   ├── main.css                # Layout, componentes
+│   │   └── theme.css               # Light/dark tokens
+│   └── js/
+│       ├── app.js                  # Router, state, DnD
+│       ├── api.js                  # REST fetch wrapper
+│       ├── websocket.js            # Progress WS client
+│       ├── components.js           # UI builders
+│       └── utils.js                # Helpers, formatters
 ├── tests/
 │   ├── converters/
 │   └── services/
 ├── requirements.txt
 ├── pyproject.toml
+├── Dockerfile
 └── README.md
+```
+
+## Testes
+
+```bash
+pytest tests/ -v
+pytest --cov=src --cov-report=term-missing
+pytest --cov=src --cov-report=term-missing --cov-fail-under=80
 ```
 
 ## Configuração
 
-As preferências são salvas em `~/.fileconverter/config.json`:
+Preferências salvas em `~/.fileconverter/config.json`:
 
 ```json
 {
@@ -153,4 +182,4 @@ As preferências são salvas em `~/.fileconverter/config.json`:
 
 ## Licença
 
-MIT
+MIT — Projeto mantido pela [AFSIS](https://github.com/afsis-dev/Swap).
